@@ -1,8 +1,7 @@
 import streamlit as st
-import pd
+import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-import pandas as pd
 
 # --- 頁面設定 ---
 st.set_page_config(page_title="Super Bull 計算機", layout="wide")
@@ -44,11 +43,10 @@ if active_tickers:
     slider_cols = st.columns(len(active_tickers))
     for i, t in enumerate(active_tickers):
         with slider_cols[i]:
-            # Slider 預設 100%
             s_pct = st.slider(f"{t} 表現", 50, 150, 100, key=f"s_{t}") / 100
             sim_results.append(s_pct)
 
-# --- 核心結算試算區 (回來了！) ---
+# --- 核心結算試算區 ---
 if sim_results:
     worst_perf = min(sim_results)
     payoff_pct = (worst_perf / strike_val) * 100
@@ -85,7 +83,6 @@ st.write("### 💵 標的即時市價參考 (Yahoo Finance)")
 def get_footer_price(ticker):
     try:
         s = yf.Ticker(ticker)
-        # 抓取最新收盤
         hist = s.history(period="1d")
         p = hist['Close'].iloc[-1] if not hist.empty else 0.0
         n = s.info.get('shortName', ticker)
