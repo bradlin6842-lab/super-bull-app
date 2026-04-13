@@ -11,7 +11,6 @@ st.title("🐂 Super Bull 計算機")
 with st.sidebar:
     st.header("⚙️ 產品參數設定")
     currency = st.selectbox("結算貨幣", ["JPY", "USD", "HKD", "AUD"])
-    
     tenor_label = st.radio("合約總天期 (Max Tenor)", ["2M", "4M", "6M"])
     max_tenor_months = int(tenor_label.replace("M", ""))
     est_exit_months = max_tenor_months / 2
@@ -22,75 +21,70 @@ with st.sidebar:
     bonus_flat = st.number_input("Bonus Coupon (Flat %)", value=9.46, step=0.01)
     
     annualized_yield = bonus_flat * (12 / est_exit_months)
-    st.info(f"📅 **預估年化收益：{round(annualized_yield, 2)}% p.a.**")
+    st.info(f"📅 預估年化收益：{round(annualized_yield, 2)}% p.a.")
 
     st.divider()
-    st.write("🔍 **自訂標的輸入**")
+    st.write("🔍 **標的設定**")
     use_t1 = st.checkbox("啟用標的 A", value=True)
-    t1_ticker = st.text_input("代碼 A", "7011.T") if use_t1 else None
+    t1_t = st.text_input("Ticker A", "NVDA") if use_t1 else None
     use_t2 = st.checkbox("啟用標的 B", value=True)
-    t2_ticker = st.text_input("代碼 B", "7012.T") if use_t2 else None
-    use_t3 = st.checkbox("啟用標的 C", value=False)
-    t3_ticker = st.text_input("代碼 C", "8058.T") if use_t3 else None
+    t2_t = st.text_input("Ticker B", "AVGO") if use_t2 else None
 
-# --- 模擬表現 Slider ---
-active_tickers = [t for t in [t1_ticker, t2_ticker, t3_ticker] if t]
+# --- 強力抓取函數 ---
+def fetch_price(ticker):
+    if not ticker: return None
+    try:
+        s = yf.Ticker(ticker)
+        # 抓取最新一筆成交價
+        p = s.fast_info['last_price']
+        n = s.info.get('shortName', ticker)
+        return {"p": round(p, 2), "n": n, "status": "🟢"}
+    except:
+        return {"p": None, "n": ticker, "status": "🔴"}
 
+active_tickers = [t for t in [t1_t, t2_t] if t]
+stock_data = {t: fetch_price(t) for t in active_tickers}
+
+# --- 模擬表現區 ---
 st.write("### 📈 模擬表現 (相對期初價 %)")
 sim_results = []
-
 if active_tickers:
-    slider_cols = st.columns(len(active_tickers))
+    cols = st.columns(len(active_tickers))
     for i, t in enumerate(active_tickers):
-        with slider_cols[i]:
-            s_pct = st.slider(f"{t} 表現", 50, 150, 100, key=f"s_{t}") / 100
+        with cols[i]:
+            info = stock_data[t]
+            # 如果自動抓取失敗 (N/A)，讓使用者手動輸入當前股價以供參考
+            current_p = info['p'] if info['p'] else st.number_input(f"手動輸入 {t} 現價", value=100.0)
+            st.caption(f"{info['status']} {info['n']}: {current_p}")
+            s_pct = st.slider(f"模擬 {t} 漲跌", 50, 150, 100, key=f"s_{t}") / 100
             sim_results.append(s_pct)
 
-# --- 核心結算試算區 ---
+# --- 結算試算區 ---
 if sim_results:
     worst_perf = min(sim_results)
     payoff_pct = (worst_perf / strike_val) * 100
-
-    st.write("### 📊 試算結果")
-    col_metric, col_status = st.columns([1, 2])
-    
-    with col_metric:
+    st.divider()
+    st.subheader("📊 試算結果")
+    c1, c2 = st.columns([1, 2])
+    with c1:
         st.metric("Worst-of 表現", f"{round(worst_perf*100, 2)}%")
-    
-    with col_status:
         if worst_perf >= strike_val:
-            st.success(f"✅ 高於 Strike 贖回價值：{round(payoff_pct, 2)}%")
-            st.caption(f"提前出場：領取 100% + {bonus_flat}% Bonus")
+            st.success(f"✅ 高於 Strike: {round(payoff_pct, 2)}%")
         else:
-            st.error(f"❌ 跌破 Strike 贖回價值：{round(payoff_pct, 2)}%")
-            st.caption(f"帳面損失：{round(100 - payoff_pct, 2)}% (通常轉為實體股票)")
+            st.error(f"❌ 跌破 Strike: {round(payoff_pct, 2)}%")
+    with c2:
+        fig = go.Figure()
+        xr = [i/100 for i in range(50, 151)]
+        yr = [(x / strike_val) * 100 for x in xr]
+        fig.add_trace(go.Scatter(x=[x*100 for x in xr], y=yr, name="收益線"))
+        fig.add_trace(go.Scatter(x=[worst_perf*100], y=[payoff_pct], mode='markers', marker=dict(size=12, color='red')))
+        fig.add_vline(x=strike_pct_input, line_dash="dash", line_color="green")
+        fig.update_layout(height=300, margin=dict(l=0,r=0,t=20,b=0))
+        st.plotly_chart(fig, use_container_width=True)
 
-    # --- 損益圖表 ---
-    fig = go.Figure()
-    xr = [i/100 for i in range(50, 151)]
-    yr = [(x / strike_val) * 100 for x in xr]
-    fig.add_trace(go.Scatter(x=[x*100 for x in xr], y=yr, name="收益線", line=dict(color='royalblue', width=3)))
-    fig.add_trace(go.Scatter(x=[worst_perf*100], y=[payoff_pct], mode='markers', 
-                             marker=dict(size=15, color='red', symbol='cross'), name="目前位置"))
-    fig.add_vline(x=strike_pct_input, line_dash="dash", line_color="green")
-    fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10))
-    st.plotly_chart(fig, use_container_width=True)
-
-# --- 最底部：即時股價表格 ---
+# --- 底部市價表 ---
 st.divider()
-st.write("### 💵 標的即時市價參考 (Yahoo Finance)")
-
-def get_footer_price(ticker):
-    try:
-        s = yf.Ticker(ticker)
-        hist = s.history(period="1d")
-        p = hist['Close'].iloc[-1] if not hist.empty else 0.0
-        n = s.info.get('shortName', ticker)
-        return {"代碼": ticker, "名稱": n, "目前市價": round(p, 2)}
-    except:
-        return {"代碼": ticker, "名稱": ticker, "目前市價": "N/A"}
-
+st.write("### 💵 標的即時市價 (Yahoo Finance)")
 if active_tickers:
-    with st.spinner("更新股價中..."):
-        data_list = [get_footer_price(t) for t in active_tickers]
-        st.table(pd.DataFrame(data_list))
+    footer = [{"代碼": t, "名稱": stock_data[t]['n'], "市價": stock_data[t]['p'] if stock_data[t]['p'] else "N/A", "狀態": stock_data[t]['status']} for t in active_tickers]
+    st.table(pd.DataFrame(footer))
